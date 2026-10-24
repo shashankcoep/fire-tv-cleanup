@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The floating pill drawn over other apps: translucent so it sits lightly over video. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:id="@+id/overlayText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:alpha="0.62"
+        android:background="@drawable/overlay_pill_bg"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="6dp"
+        android:textColor="#F2FFFFFF"
+        android:textSize="12sp"
+        android:fontFamily="@font/open_sans"
+        android:fontVariationSettings="'wght' 500"
+        android:letterSpacing="0.02"
+        android:singleLine="true"
+        android:shadowColor="#B3000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="3" />
+</FrameLayout>

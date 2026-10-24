@@ -43,6 +43,7 @@
         android:singleLine="true" />
 
     <LinearLayout
+        android:id="@+id/content"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
@@ -158,6 +159,13 @@
                     android:nextFocusDown="@+id/grid" />
 
                 <TextView
+                    android:id="@+id/btnSysInfo"
+                    style="@style/TopButton"
+                    android:focusable="false"
+                    android:clickable="false"
+                    android:drawableStart="@drawable/ic_info" />
+
+                <TextView
                     android:id="@+id/btnSettings"
                     style="@style/TopIconButton"
                     android:contentDescription="@string/settings"
@@ -177,8 +185,8 @@
                 android:id="@+id/grid"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:paddingStart="264dp"
-                android:paddingEnd="264dp"
+                android:paddingStart="32dp"
+                android:paddingEnd="32dp"
                 android:paddingTop="10dp"
                 android:paddingBottom="40dp"
                 android:clipToPadding="false"

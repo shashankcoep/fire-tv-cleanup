@@ -29,4 +29,7 @@
     <string name="move_right">Move Right</string>
     <string name="app_info">App Info</string>
     <string name="dock_full">Dock is full. Unpin an app first.</string>
+    <string name="eye_break">look away · eye break</string>
+    <string name="overlay_channel">Screen time pill</string>
+    <string name="overlay_notice">Showing the clock and screen time</string>
 </resources>

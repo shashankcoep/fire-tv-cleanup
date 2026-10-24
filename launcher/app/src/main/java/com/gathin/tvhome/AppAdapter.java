@@ -50,6 +50,16 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         void onTileMenu(int position, View card);
     }
 
+    // Grid tile size in px, set by MainActivity once the grid is measured (rectangular, 5-across).
+    // Dock tiles keep their own fixed square size regardless of this.
+    private int gridTileW = 0, gridTileH = 0;
+    private static final float DOCK_TILE_DP = 66f;
+
+    void setGridTileSize(int widthPx, int heightPx) {
+        gridTileW = widthPx;
+        gridTileH = heightPx;
+    }
+
     // Optional square icons, drawn locally by tools/make_dock_icons.py and kept out of git (they are trademarked
     // logos). Looked up by name so the app builds without them; missing ones fall back to the app's own icon.
     private static final Map<String, String> DOCK_ICONS = new HashMap<>();
@@ -66,14 +76,17 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         final String pkg;
         /** Square dock art, or null: then the app's own icon sits on a graphite tile. */
         final Drawable square;
+        /** The app's own landscape TV banner (android:banner, 16:9), or null. Fills a grid tile edge to edge. */
+        final Drawable banner;
         final Drawable icon;
         int ambient;
 
-        Entry(String label, ComponentName component, Drawable square, Drawable icon) {
+        Entry(String label, ComponentName component, Drawable square, Drawable banner, Drawable icon) {
             this.label = label;
             this.component = component;
             this.pkg = component.getPackageName();
             this.square = square;
+            this.banner = banner;
             this.icon = icon;
         }
     }
@@ -83,7 +96,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
 
     private final Context ctx;
     private final TileListener listener;
-    private static final String PREFS = "tvhome";
+    static final String PREFS = "tvhome";
     private static final String PREF_DOCK = "dock";
     private final int maxDock;
     private int dockCount;
@@ -121,11 +134,17 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             if (!seen.add(pkg)) continue;
             Drawable icon = ri.loadIcon(pm);
             String label = String.valueOf(ri.loadLabel(pm));
+            // Falls back to the application banner when the activity declares none, and to null when neither does.
+            Drawable banner = null;
+            try {
+                banner = ri.activityInfo.loadBanner(pm);
+            } catch (Exception ignored) {
+            }
             String squareName = DOCK_ICONS.get(pkg);
             int square = squareName == null ? 0
                     : ctx.getResources().getIdentifier(squareName, "drawable", ctx.getPackageName());
             fresh.add(new Entry(label, new ComponentName(pkg, ri.activityInfo.name),
-                    square != 0 ? ctx.getDrawable(square) : null, icon));
+                    square != 0 ? ctx.getDrawable(square) : null, banner, icon));
         }
         Collections.sort(fresh, (a, b) -> {
             int fa = pinned.indexOf(a.pkg), fb = pinned.indexOf(b.pkg);
@@ -209,14 +228,33 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         h.card.setScaleX(1f);
         h.card.setScaleY(1f);
         h.card.setTranslationY(0f);
-        h.shadow.setVisibility(View.VISIBLE);
+        // Rectangular grid tiles size themselves to the measured 5-across row; the dock keeps a fixed square.
+        ViewGroup.LayoutParams cardLp = h.card.getLayoutParams();
+        float density = ctx.getResources().getDisplayMetrics().density;
+        if (docked) {
+            cardLp.width = Math.round(DOCK_TILE_DP * density);
+            cardLp.height = cardLp.width;
+        } else if (gridTileW > 0) {
+            cardLp.width = gridTileW;
+            cardLp.height = gridTileH;
+        }
+        h.card.setLayoutParams(cardLp);
+        if (!docked) {
+            ViewGroup.MarginLayoutParams nameLp = (ViewGroup.MarginLayoutParams) h.name.getLayoutParams();
+            nameLp.topMargin = cardLp.height + Math.round(7 * density);
+            h.name.setLayoutParams(nameLp);
+        }
+        // The diffuse circular shadow is drawn for the small square dock icons; it doesn't suit a wide banner tile.
+        h.shadow.setVisibility(docked ? View.VISIBLE : View.GONE);
         h.shadow.setScaleX(1f);
         h.shadow.setScaleY(1f);
         h.shadow.setTranslationY(0f);
         h.label.setVisibility(View.GONE);
-        boolean art = e.square != null;
+        // The dock wants the square logo; a wide grid tile wants the app's own 16:9 banner, filling it edge to edge.
+        Drawable tileArt = docked ? e.square : e.banner != null ? e.banner : e.square;
+        boolean art = tileArt != null;
         h.card.setBackground(art ? null : ctx.getDrawable(R.drawable.dock_tile_bg));
-        h.banner.setImageDrawable(e.square);
+        h.banner.setImageDrawable(tileArt);
         h.banner.setVisibility(art ? View.VISIBLE : View.GONE);
         h.icon.setImageDrawable(art ? null : e.icon);
         h.icon.setVisibility(art ? View.GONE : View.VISIBLE);
@@ -253,7 +291,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     int ambientColorAt(int position) {
         if (position < 0 || position >= items.size()) return 0xFF444444;
         Entry e = items.get(position);
-        if (e.ambient == 0) e.ambient = vividColor(e.square != null ? e.square : e.icon);
+        if (e.ambient == 0) e.ambient = vividColor(e.square != null ? e.square : e.banner != null ? e.banner : e.icon);
         return e.ambient;
     }
 

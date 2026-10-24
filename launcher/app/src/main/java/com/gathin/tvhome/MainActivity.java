@@ -1,9 +1,13 @@
 package com.gathin.tvhome;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
@@ -21,6 +25,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -61,6 +66,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     static int COLUMNS = 4;
     private static final long MINUTE_MS = 60_000L;
     private String liveTvPkg;
+    // Rectangular grid tiles: gap between tiles, and tile height as a fraction of its width (banner-ish).
+    private static final float GRID_GUTTER_DP = 14f;
+    private static final float GRID_TILE_ASPECT = 0.5625f;   // 16:9, the shape of an Android TV banner: no crop
+    private int gridTileW = 0, gridTileH = 0;
+    private TextView sysInfo;
+    // The pill counts a session, not raw uptime: see OverlayService.Session. This Fire TV never deep sleeps
+    // (its realtime and uptime clocks match to the millisecond), so "the TV was off" can only be read from the
+    // display turning off, which OverlayService watches for.
 
     private AppAdapter adapter;
     private RecyclerView grid;
@@ -108,6 +121,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             updateGreeting();
             updateBackground();
             updateWifiLabel();
+            updateSystemInfo();
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -134,6 +148,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         greeting = findViewById(R.id.greeting);
         bgPhoto = findViewById(R.id.bgPhoto);
         btnWifi = findViewById(R.id.btnWifi);
+        sysInfo = findViewById(R.id.btnSysInfo);
+        OverlayService.Session.settle(prefs());
 
         grid = findViewById(R.id.grid);
         // One span unit per cell of any dock size 1..COLUMNS: the dock row splits evenly, grid rows are COLUMNS wide.
@@ -152,6 +168,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         grid.setLayoutAnimation(new LayoutAnimationController(
                 AnimationUtils.loadAnimation(this, R.anim.tile_enter), 0.06f));
         adapter = new AppAdapter(this, this, COLUMNS);
+        // Size the rectangular tiles before the first bind: the row width is known from the display and the
+        // paddings either side of it, so nothing has to be measured and no rebind (which drops focus) is needed.
+        View content = findViewById(R.id.content);
+        int availW = getResources().getDisplayMetrics().widthPixels
+                - content.getPaddingStart() - content.getPaddingEnd()
+                - grid.getPaddingStart() - grid.getPaddingEnd();
+        gridTileW = Math.max(1, availW / COLUMNS - (int) (GRID_GUTTER_DP * density));
+        gridTileH = Math.round(gridTileW * GRID_TILE_ASPECT);
+        adapter.setGridTileSize(gridTileW, gridTileH);
         grid.addItemDecoration(new DockDecoration(adapter, COLUMNS, density));
         grid.setAdapter(adapter);
 
@@ -159,9 +184,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         grid.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
             int h = b - t;
             int dockRow = (int) ((101 + 6 + 12) * density);   // item height plus DockDecoration offsets
-            int want = Math.max(0, h - dockRow + (int) (8 * density));
+            // With a dock the first row is pinned to the bottom of the screen and the grid waits below it.
+            // With no dock there is nothing to pin, so the grid simply starts under the header.
+            int want = adapter.dockCount() == 0
+                    ? (int) (10 * density)
+                    : Math.max(0, h - dockRow + (int) (8 * density));
             if (grid.getPaddingTop() != want) {
                 grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
+            }
+            // Safety net for a row width the display metrics didn't predict (a resized window, a display change).
+            int rowW = (r - l) - grid.getPaddingLeft() - grid.getPaddingRight();
+            int tileW = Math.max(1, rowW / COLUMNS - (int) (GRID_GUTTER_DP * density));
+            int tileH = Math.round(tileW * GRID_TILE_ASPECT);
+            if (tileW != gridTileW || tileH != gridTileH) {
+                gridTileW = tileW;
+                gridTileH = tileH;
+                adapter.setGridTileSize(tileW, tileH);
+                adapter.notifyDataSetChanged();
+                // Rebinding drops focus on the floor; put it back on a tile so OK works straight away.
+                grid.post(() -> {
+                    View f = getCurrentFocus();
+                    if (f == null || grid.findContainingViewHolder(f) == null) focusTile(lastFocused);
+                });
             }
         });
 
@@ -233,6 +277,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateGreeting();
         updateBackground();
         updateWifiLabel();
+        OverlayService.Session.settle(prefs());
+        updateSystemInfo();
+        OverlayService.setHomeVisible(this, true);   // the header pill is on screen: no need to float one too
         handler.postDelayed(minuteTick, MINUTE_MS);
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         if (cm != null) cm.registerDefaultNetworkCallback(networkCallback);
@@ -251,7 +298,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         handler.removeCallbacks(minuteTick);
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         if (cm != null) cm.unregisterNetworkCallback(networkCallback);
+        // Off the home screen the floating pill takes over, so the count stays visible inside apps.
+        OverlayService.setHomeVisible(this, false);
     }
+
 
     @Override
     public void onBackPressed() {
@@ -613,6 +663,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return;
         }
         setWifiPill(WIFI_ICONS[bars], getString(R.string.wifi), 0);
+    }
+
+    private SharedPreferences prefs() {
+        return getSharedPreferences(AppAdapter.PREFS, MODE_PRIVATE);
+    }
+
+    /** Free RAM and how long this session has been running, shown as a pill next to the Wi-Fi button. */
+    private void updateSystemInfo() {
+        if (sysInfo == null) return;
+        ActivityManager am = getSystemService(ActivityManager.class);
+        ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+        if (am != null) am.getMemoryInfo(mi);
+        sysInfo.setText(String.format(java.util.Locale.US, "%.1f GB · %s",
+                mi.availMem / 1e9, OverlayService.Session.format(prefs())));
     }
 
     private void setWifiPill(int icon, String label, int alertColor) {

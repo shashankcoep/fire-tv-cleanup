@@ -6,13 +6,9 @@
 <resources>
 
     <!-- Starting dock, in this order. After that the dock is edited on the TV (hold OK or press Menu on an app)
-         and saved on the device. Missing apps are skipped. -->
-    <string-array name="dock_apps">
-        <item>com.amazon.firetv.youtube</item>
-        <item>com.netflix.ninja</item>
-        <item>com.amazon.firebat</item>
-        <item>com.apple.airplay.amazon.airplay</item>
-    </string-array>
+         and saved on the device. Missing apps are skipped.
+         Empty: no dock row, every app is a banner tile in one uniform grid. Pin an app on the TV to start a dock. -->
+    <string-array name="dock_apps" />
 
     <!-- Apps never shown as tiles (e.g. the Live TV app, which the Inputs menu already covers). -->
     <string-array name="hidden_apps">
@@ -21,11 +17,13 @@
         <item>com.amazon.smarthomemapviewapp</item>  <!-- Alexa Smart Home -->
         <item>com.amazon.spiderpork</item>   <!-- Luna -->
         <item>com.amazon.bueller.music</item>
+        <item>com.amazon.whasettings</item>  <!-- Wireless multi-room audio setup, not a real app -->
+        <item>com.amazon.tv.earlyaccess</item>  <!-- Fire OS beta-features enrollment -->
     </string-array>
 
     <!-- The TV's Live TV / tuner app, offered at the end of the Inputs menu. Leave empty to omit. -->
     <string name="live_tv_package" translatable="false">com.amazon.tv.livetv</string>
 
     <!-- Tiles per row in the grid, and the most apps the dock can hold. -->
-    <integer name="columns">4</integer>
+    <integer name="columns">5</integer>
 </resources>
